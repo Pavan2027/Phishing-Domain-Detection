@@ -5,7 +5,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from features.lexical import extract_lexical
 
-model    = joblib.load("models/rf_model.pkl")
+model    = joblib.load("models/best_model.pkl")
 features = joblib.load("models/selected_features.pkl")
 scaler   = joblib.load("models/scaler.pkl")
 

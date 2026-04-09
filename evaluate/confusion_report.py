@@ -18,7 +18,7 @@ def full_report(threshold: float = 0.5):
     X_test  = test_df.drop(columns=["label"])[features]
     y_test  = test_df["label"].astype(int)
 
-    X_scaled = scaler.transform(X_test)
+    X_scaled = X_test.values  # already scaled, don't transform again
     probs    = model.predict_proba(X_scaled)[:, 1]
     preds    = (probs >= threshold).astype(int)
 

@@ -1,5 +1,5 @@
 Best model : XGBoost
-ROC-AUC    : 0.9956
+ROC-AUC    : 0.9953
 RF AUC     : 0.9927
-XGB AUC    : 0.9956
-SVM AUC    : 0.9865
+XGB AUC    : 0.9953
+SVM AUC    : 0.9856

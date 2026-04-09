@@ -20,8 +20,7 @@ def tune_threshold(min_precision: float = 0.90):
     X_test   = test_df.drop(columns=["label"])[features]
     y_test   = test_df["label"].astype(int)
 
-    X_scaled = scaler.transform(X_test)
-    probs    = model.predict_proba(X_scaled)[:, 1]
+    probs    = model.predict_proba(X_test.values)[:, 1]
 
     precision, recall, thresholds = precision_recall_curve(y_test, probs)
 
