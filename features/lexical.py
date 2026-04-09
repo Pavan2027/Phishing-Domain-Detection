@@ -4,6 +4,7 @@ import math
 import tldextract
 from urllib.parse import urlparse
 from collections import Counter
+from difflib import SequenceMatcher
 
 SUSPICIOUS_TLDS = {
     "tk","ml","ga","cf","gq","xyz","top","club","online",
@@ -14,6 +15,43 @@ BRANDS = [
     "paypal","amazon","google","apple","microsoft","netflix",
     "instagram","facebook","bankofamerica","wellsfargo","chase",
     "linkedin","dropbox","twitter"
+]
+
+TRUSTED_DOMAINS = {
+    "google.com",
+    "amazon.com",
+    "github.com",
+    "microsoft.com",
+    "microsoftonline.com",
+    "apple.com",
+    "paypal.com",
+    "netflix.com",
+    "dropbox.com",
+    "linkedin.com",
+    "instagram.com",
+    "stackoverflow.com",
+    "mozilla.org",
+    "aws.amazon.com",
+    "azure.com",
+    "arxiv.org",
+    "mit.edu",
+    "irs.gov",
+    "ssa.gov",
+    "google.com",
+    "mail.google.com",
+    "accounts.google.com",
+    "amazon.com",
+    "github.com",
+    "microsoftonline.com",
+    "login.microsoftonline.com",
+    "aws.amazon.com",
+    "portal.azure.com",
+    "developer.mozilla.org"
+}
+
+SUSPICIOUS_WORDS = [
+    "login", "signin", "verify", "secure",
+    "account", "update", "billing", "unlock"
 ]
 
 def _entropy(s: str) -> float:
@@ -33,6 +71,7 @@ def extract_lexical(url: str) -> dict:
         subdomain = ext.subdomain or ""
         sld       = ext.domain or ""
         tld       = ext.suffix or ""
+        registered_domain = f"{sld}.{tld}" if sld and tld else sld
 
         return {
             # --- length features ---
@@ -54,6 +93,24 @@ def extract_lexical(url: str) -> dict:
                                         / max(len(full), 1), 4),
 
             # --- structural features ---
+            "suspicious_short_domain": int(
+                                            len(sld) <= 8 and tld in SUSPICIOUS_TLDS
+                                        ),
+            "trusted_with_redirect": int(
+                                        registered_domain in TRUSTED_DOMAINS and
+                                        ("continue=" in full or "redirect=" in full)
+                                    ),
+            "random_domain_flag": int(
+                                        len(sld) >= 6 and _entropy(sld) > 2.5
+                                    ),
+            "is_trusted_domain": int(any(
+                                    registered_domain == td or registered_domain.endswith("." + td)
+                                    for td in TRUSTED_DOMAINS
+                                )),
+            "suspicious_word_count": sum(
+                                            word in full for word in SUSPICIOUS_WORDS
+                                        ),
+            "brand_typo_detected": looks_like_brand_typo(sld),            
             "subdomain_count":    len([s for s in subdomain.split(".")
                                        if s]) if subdomain else 0,
             "has_ip":             int(bool(re.match(
@@ -88,3 +145,10 @@ def extract_lexical(url: str) -> dict:
         }
     except Exception:
         return {}
+
+def looks_like_brand_typo(domain):
+    for brand in BRANDS:
+        similarity = SequenceMatcher(None, domain, brand).ratio()
+        if similarity >= 0.75 and domain != brand:
+            return 1
+    return 0

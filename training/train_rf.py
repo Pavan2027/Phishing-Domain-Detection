@@ -22,7 +22,11 @@ def train_random_forest():
 
     cv   = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     grid = GridSearchCV(
-        RandomForestClassifier(random_state=42, n_jobs=-1),
+        RandomForestClassifier(
+            random_state=42,
+            n_jobs=-1,
+            class_weight="balanced"
+        ),
         param_grid,
         cv=cv,
         scoring="f1",

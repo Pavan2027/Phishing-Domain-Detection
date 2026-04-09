@@ -15,17 +15,20 @@ LEXICAL_ONLY = [
     "num_dots", "num_hyphens", "num_underscores",
     "num_slashes", "num_at", "num_question", "num_equals",
     "num_ampersand", "num_digits", "digit_ratio",
-    "subdomain_count", "has_ip", "has_port", "uses_https",
+    "subdomain_count", "has_ip", "has_port",
     "has_at_symbol", "double_slash_path", "has_redirect",
     "url_entropy", "domain_entropy", "suspicious_tld",
     "brand_in_subdomain", "brand_in_domain",
-    "num_tokens", "longest_token",
+    "num_tokens", "longest_token", "is_trusted_domain",
+    "suspicious_word_count", "suspicious_short_domain",
+    "brand_typo_detected", "random_domain_flag",
+    "trusted_with_redirect"
 ]
 
 def preprocess(
     matrix_path: str = "data/feature_matrix.csv",
     out_path:    str = "data/processed_features.csv",
-    top_n:       int = 25
+    top_n:       int = 35
 ):
     import pandas as pd
     import numpy as np

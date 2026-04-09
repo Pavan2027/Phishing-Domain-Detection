@@ -39,7 +39,11 @@ def train_svm():
 
     cv   = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     grid = GridSearchCV(
-        SVC(probability=True, random_state=42),
+        SVC(
+            probability=True,
+            random_state=42,
+            class_weight="balanced"
+        ),
         param_grid,
         cv=cv,
         scoring="f1",

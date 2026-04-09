@@ -27,7 +27,8 @@ def train_xgboost():
             eval_metric="logloss",
             random_state=42,
             n_jobs=-1,
-            verbosity=0
+            verbosity=0,
+            scale_pos_weight=1.5
         ),
         param_grid,
         cv=cv,
