@@ -5,7 +5,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from features.lexical import extract_lexical
 
-model    = joblib.load("models/best_model.pkl")
+model    = joblib.load("models/rf_model.pkl")
 features = joblib.load("models/selected_features.pkl")
 scaler   = joblib.load("models/scaler.pkl")
 
@@ -38,7 +38,7 @@ for url in TEST_URLS:
             row[f] = -1
     row = row[features].fillna(-1)
 
-    row_scaled = scaler.transform(row)
+    row_scaled = pd.DataFrame(scaler.transform(row), columns=row.columns)
     pred       = model.predict(row_scaled)[0]
     prob       = model.predict_proba(row_scaled)[0][1]
     label      = "PHISHING" if pred == 1 else "legit"

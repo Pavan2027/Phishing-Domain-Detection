@@ -13,7 +13,11 @@ def export_labelled():
     conn.close()
 
     before = len(df)
-    df     = df.drop_duplicates(subset=["domain"])
+
+    # Deduplicate by URL — NOT by domain.
+    # Deduping by domain was dropping augmented legit URLs that share a
+    # domain with the original bare Tranco entry.
+    df = df.drop_duplicates(subset=["url"])
     print(f"Rows after dedup: {len(df):,} (removed {before - len(df):,} dupes)")
 
     df.to_csv("data/labelled_domains.csv", index=False)

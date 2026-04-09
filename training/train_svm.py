@@ -18,16 +18,17 @@ def train_svm():
     MAX_TRAIN = 10000
     if len(X_train) > MAX_TRAIN:
         print(f"[SVM] Subsampling train to {MAX_TRAIN:,} rows for speed...")
-        df_tmp = pd.DataFrame(X_train)
-        df_tmp["label"] = y_train.values
-        df_tmp = df_tmp.groupby("label", group_keys=False).apply(
-            lambda x: x.sample(
-                min(len(x), MAX_TRAIN // 2),
-                random_state=42
-            )
-        )
-        X_train = df_tmp.drop(columns=["label"])
-        y_train = df_tmp["label"]
+
+        # Stratified subsample: 5k per class using index alignment
+        # Avoids pandas groupby().apply() dropping the groupby column in newer versions
+        per_class = MAX_TRAIN // 2
+        idx_0 = y_train[y_train == 0].sample(n=min(per_class, (y_train == 0).sum()), random_state=42).index
+        idx_1 = y_train[y_train == 1].sample(n=min(per_class, (y_train == 1).sum()), random_state=42).index
+        idx   = idx_0.append(idx_1)
+
+        X_train = X_train.loc[idx]
+        y_train = y_train.loc[idx]
+        print(f"[SVM] Subsample class distribution: {y_train.value_counts().to_dict()}")
 
     print("\n[SVM] Starting GridSearchCV...")
     param_grid = {

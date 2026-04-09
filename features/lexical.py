@@ -68,7 +68,7 @@ def extract_lexical(url: str) -> dict:
 
             # --- entropy ---
             "url_entropy":        round(_entropy(full), 4),
-            "domain_entropy":     round(_entropy(domain), 4),
+            "domain_entropy":     round(_entropy(sld), 4),
 
             # --- TLD features ---
             "suspicious_tld":     int(tld in SUSPICIOUS_TLDS),

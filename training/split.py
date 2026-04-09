@@ -21,21 +21,25 @@ def load_and_split(path: str = "data/processed_features.csv"):
 
     print(f"\nTrain: {len(X_train):,} | Test: {len(X_test):,}")
 
-    # check if SMOTE needed (ratio worse than 2:1)
-    counts     = y_train.value_counts()
-    majority   = counts.max()
-    minority   = counts.min()
-    ratio      = majority / minority
+    counts   = y_train.value_counts()
+    majority = counts.max()
+    minority = counts.min()
+    ratio    = majority / minority
 
-    if ratio > 2.0:
+    # Threshold raised to 4.0 — intentional augmentation creates a 2:1 ratio
+    # which is acceptable for tree-based models. SMOTE at 2:1 generates
+    # large volumes of synthetic phishing samples that poison the boundary.
+    # Only apply SMOTE for severe imbalance (original data without augmentation
+    # would trigger this if needed).
+    if ratio > 4.0:
         print(f"Imbalance ratio {ratio:.2f} — applying SMOTE...")
         sm = SMOTE(random_state=42)
         X_train, y_train = sm.fit_resample(X_train, y_train)
         print(f"After SMOTE: {pd.Series(y_train).value_counts().to_string()}")
     else:
-        print(f"Ratio {ratio:.2f}:1 — balance fine, skipping SMOTE")
+        print(f"Ratio {ratio:.2f}:1 — balance acceptable, skipping SMOTE")
 
-    # save test set for evaluation
+    # Save test set for evaluation
     test_df = X_test.copy()
     test_df["label"] = y_test.values
     test_df.to_csv("data/test_set.csv", index=False)

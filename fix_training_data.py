@@ -1,93 +1,166 @@
 # fix_training_data.py  — place at project root
+#
+# Generates exactly 1 variant per Tranco domain.
+# Previous run used 4 variants → 124k legit vs 25k phishing (4.85:1)
+# → SMOTE generated 74k synthetic phishing → poisoned decision boundary.
+#
+# 1 variant → ~50k legit vs 25k phishing (2:1) → no SMOTE needed.
+# Each variant alternates between www and no-www so the model sees both.
+
+import sqlite3
 import pandas as pd
-from urllib.parse import urlparse
+from datetime import datetime
 import os
+import random
 
-CSV_PATH = os.path.join("data", "labelled_domains.csv")
+DB_PATH = os.path.join("data", "phishing.db")
 
-LEGIT_URLS = [
-    # E-commerce
-    "https://www.amazon.com/dp/B08N5WRWNW",
-    "https://www.amazon.com/s?k=wireless+headphones",
-    "https://www.ebay.com/itm/123456789",
-    "https://www.walmart.com/ip/Apple-AirPods/123456",
-    "https://www.bestbuy.com/site/apple-airpods/6084400.p",
-    "https://www.target.com/p/apple-airpods-pro/-/A-54191097",
-    "https://www.etsy.com/listing/123456/handmade-ceramic-mug",
-    "https://www.newegg.com/p/N82E16814137733",
-    # Developer
-    "https://github.com/login",
-    "https://github.com/openai/openai-python/issues",
-    "https://stackoverflow.com/questions/231767/what-does-the-yield-keyword-do",
-    "https://docs.python.org/3/library/os.html",
-    "https://pypi.org/project/pandas/",
-    "https://gitlab.com/users/sign_in",
-    "https://hub.docker.com/r/python/python",
-    "https://npmjs.com/package/express",
-    # Social
-    "https://www.linkedin.com/login",
-    "https://twitter.com/i/flow/login",
-    "https://www.reddit.com/r/MachineLearning/",
-    "https://www.facebook.com/login/",
-    "https://accounts.google.com/signin/v2/identifier",
-    "https://mail.google.com/mail/u/0/#inbox",
-    "https://outlook.live.com/mail/0/inbox",
-    # Finance
-    "https://www.chase.com/personal/banking/login",
-    "https://www.bankofamerica.com/online-banking/sign-in/",
-    "https://login.microsoftonline.com/common/oauth2/authorize",
-    "https://www.coinbase.com/signin",
-    "https://app.robinhood.com/login/",
-    # Travel
-    "https://www.booking.com/searchresults.html?ss=Paris",
-    "https://www.airbnb.com/s/London/homes",
-    "https://www.expedia.com/Hotel-Search?destination=New+York",
-    "https://www.tripadvisor.com/Hotels-g60763-New_York_City.html",
-    # News
-    "https://www.bbc.com/news/world-us-canada",
-    "https://www.nytimes.com/section/technology",
-    "https://www.reuters.com/technology/",
-    "https://www.cnn.com/us",
-    # Cloud / SaaS
-    "https://console.aws.amazon.com/ec2/v2/home",
-    "https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade",
-    "https://app.netlify.com/sites",
-    "https://dashboard.heroku.com/apps",
-    "https://vercel.com/dashboard",
-    # Education
-    "https://www.coursera.org/learn/machine-learning",
-    "https://www.udemy.com/course/the-complete-python-bootcamp/",
-    "https://www.khanacademy.org/math/linear-algebra",
-    "https://www.wikipedia.org/wiki/Phishing",
-    "https://arxiv.org/abs/2305.15047",
-    # Health
-    "https://www.webmd.com/cold-and-flu/flu-guide/what-is-flu",
-    "https://www.mayoclinic.org/diseases-conditions/diabetes/symptoms-causes/syc-20371444",
-    "https://www.nih.gov/health-information",
+# Representative paths — balanced between short and deep
+PATHS = [
+    "/", "/login", "/signin", "/sign-in", "/register", "/signup",
+    "/account", "/account/settings", "/profile", "/dashboard",
+    "/search?q=test", "/help", "/support", "/privacy", "/terms",
+    "/products", "/services", "/blog", "/news", "/pricing",
+    "/download", "/docs", "/documentation", "/en/home", "/cart",
+    "/checkout", "/orders", "/shop", "/feed", "/notifications",
+    "/messages", "/settings/security", "/verify", "/reset-password",
+    "/oauth/authorize", "/auth/login", "/user/profile", "/users/sign_in",
+    "/watch?v=dQw4w9WgXcQ", "/article/breaking-news-today",
+    "/s?k=search+term", "/search?q=example&page=1",
+    "/gp/sign-in.html", "/dp/B08N5WRWNW", "/itm/123456789",
 ]
 
+
+def make_variants(bare_domain: str, index: int) -> list:
+    path = PATHS[index % len(PATHS)]
+    results = []
+
+    # variant A — with a path (existing behaviour)
+    if index % 2 == 0:
+        full_domain = f"www.{bare_domain}"
+    else:
+        full_domain = bare_domain
+    results.append((f"https://{full_domain}{path}", full_domain))
+
+    # variant B — bare www, no path (fills the google.com gap)
+    www_domain = f"www.{bare_domain}"
+    results.append((f"https://{www_domain}", www_domain))
+
+    return results
+
+
 def main():
-    df = pd.read_csv(CSV_PATH)
-    print(f"[before] rows: {len(df)}")
-    print(df["label"].value_counts().to_string())
+    random.seed(42)
+    conn = sqlite3.connect(DB_PATH)
 
-    new_rows = []
-    for url in LEGIT_URLS:
-        domain = urlparse(url).netloc
-        # Build a row matching existing columns; unknown cols stay None
-        row = {col: None for col in df.columns}
-        row["url"]    = url
-        row["domain"] = domain
-        row["label"]  = 0
-        row["source"] = "manual_legit_paths"
-        new_rows.append(row)
+    # ── Step 1: Fix Tranco http:// → https:// ───────────────────────────
+    cur = conn.execute(
+        "SELECT COUNT(*) FROM domains "
+        "WHERE label=0 AND source='tranco' AND url LIKE 'http://%'"
+    )
+    http_count = cur.fetchone()[0]
+    if http_count > 0:
+        conn.execute("""
+            UPDATE domains
+            SET url = 'https://' || SUBSTR(url, 8)
+            WHERE label=0 AND source='tranco' AND url LIKE 'http://%'
+        """)
+        conn.commit()
+        print(f"[Step 1] Upgraded {http_count:,} Tranco URLs: http:// → https://")
+    else:
+        print("[Step 1] Tranco URLs already use https://")
 
-    combined = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-    combined.to_csv(CSV_PATH, index=False)
+    # ── Step 2: Remove ALL previously augmented rows ─────────────────────
+    cur = conn.execute(
+        "SELECT COUNT(*) FROM domains WHERE source='tranco_augmented'"
+    )
+    old_count = cur.fetchone()[0]
+    if old_count > 0:
+        conn.execute("DELETE FROM domains WHERE source='tranco_augmented'")
+        conn.commit()
+        print(f"[Step 2] Removed {old_count:,} old augmented rows")
+    else:
+        print("[Step 2] No old augmented rows found")
 
-    print(f"\n[after]  rows: {len(combined)}")
-    print(combined["label"].value_counts().to_string())
-    print(f"\nDone — added {len(new_rows)} legit URLs with paths.")
+    # ── Step 3: Load Tranco domains ──────────────────────────────────────
+    tranco_df = pd.read_sql(
+        "SELECT url, domain FROM domains WHERE label=0 AND source='tranco'",
+        conn
+    )
+    print(f"[Step 3] Loaded {len(tranco_df):,} Tranco domains")
+
+    # ── Step 4: Load existing URLs to avoid dupes ────────────────────────
+    existing = pd.read_sql("SELECT url FROM domains", conn)
+    existing_urls = set(existing["url"].astype(str).tolist())
+
+    # ── Step 5: Insert 1 variant per domain ──────────────────────────────
+    now      = datetime.utcnow().isoformat()
+    inserted = 0
+    skipped  = 0
+    batch    = []
+    BATCH_SIZE = 2000
+
+    for i, row in enumerate(tranco_df.itertuples()):
+        bare = row.domain if row.domain else \
+            str(row.url).replace("https://", "").replace("http://", "").strip("/")
+
+        for url, full_domain in make_variants(bare, i):
+            if url in existing_urls:
+                skipped += 1
+                continue
+
+            batch.append((url, full_domain, 0, "tranco_augmented", 1, now))
+            existing_urls.add(url)
+            inserted += 1
+
+            if len(batch) >= BATCH_SIZE:
+                conn.executemany(
+                    "INSERT INTO domains (url, domain, label, source, verified, scraped_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    batch
+                )
+                conn.commit()
+                batch = []
+
+    if batch:
+        conn.executemany(
+            "INSERT INTO domains (url, domain, label, source, verified, scraped_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            batch
+        )
+        conn.commit()
+
+    print(f"[Step 4] Inserted {inserted:,} variants ({skipped} skipped as dupes)")
+
+    # ── Step 5: Verify final counts ──────────────────────────────────────
+    counts = pd.read_sql(
+        "SELECT label, COUNT(*) as n FROM domains WHERE label IN (0,1) GROUP BY label",
+        conn
+    )
+    total_legit   = counts[counts["label"] == 0]["n"].values[0]
+    total_phish   = counts[counts["label"] == 1]["n"].values[0]
+    ratio         = total_legit / total_phish
+
+    print(f"\n[Step 5] Final DB counts:")
+    print(f"  Legit    : {total_legit:,}")
+    print(f"  Phishing : {total_phish:,}")
+    print(f"  Ratio    : {ratio:.2f}:1  ({'SMOTE will NOT trigger' if ratio <= 4.0 else 'SMOTE may trigger'})")
+
+    sample = pd.read_sql(
+        "SELECT url FROM domains WHERE source='tranco_augmented' LIMIT 8", conn
+    )
+    print(f"\n  Sample augmented URLs:")
+    for url in sample["url"].tolist():
+        print(f"    {url}")
+
+    conn.close()
+    print(f"\nDone. Now run:")
+    print("  python labelling/export_labelled.py")
+    print("  python -m features.pipeline")
+    print("  python -m features.preprocess")
+    print("  python training/train_all.py")
+    print("  python test_model.py")
+
 
 if __name__ == "__main__":
     main()
